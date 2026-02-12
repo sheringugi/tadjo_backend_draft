@@ -139,6 +139,13 @@ class OrderItem(OrderItemBase):
     class Config:
         from_attributes = True
 
+class CardDetails(BaseModel):
+    card_number: str
+    exp_month: int
+    exp_year: int
+    cvc: str
+    card_holder_name: Optional[str] = None
+
 class OrderBase(BaseModel):
     shipping_address_id: Optional[UUID] = None
     notes: Optional[str] = None
@@ -395,13 +402,7 @@ class ProductImage(ProductImageBase):
 class Token(BaseModel):
     access_token: str
     token_type: str
+    role: str
 
 class TokenData(BaseModel):
     email: Optional[str] = None
-
-class CardDetails(BaseModel):
-    card_number: str
-    exp_month: int
-    exp_year: int
-    cvc: str
-    card_holder_name: Optional[str] = None

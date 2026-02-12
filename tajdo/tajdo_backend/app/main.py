@@ -2,6 +2,9 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from uuid import UUID
+from decimal import Decimal
+import uuid
 from .services.payment_service import process_twint_payment, process_card_payment
 from datetime import timedelta
 
@@ -11,7 +14,8 @@ from .schemas import schemas
 from .core.security import verify_password, get_password_hash, create_access_token, decode_access_token
 
 # Create database tables
-models.Base.metadata.create_all(bind=engine)
+# This is handled by Alembic migrations. It's good practice to not have this in the main app.
+# models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Tajdo Online Store API", version="1.0.0")
 
@@ -34,8 +38,17 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
         raise credentials_exception
     return user
 
+async def get_current_admin(current_user: schemas.User = Depends(get_current_user)):
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The user doesn't have enough privileges"
+        )
+    return current_user
+
 @app.get("/")
 def read_root():
+    print("Root endpoint accessed!")
     return {"message": "Welcome to Tajdo Online Store API"}
 
 @app.post("/token", response_model=schemas.Token)
@@ -51,7 +64,25 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     access_token = create_access_token(
         data={"sub": user.email}, expires_delta=access_token_expires
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {"access_token": access_token, "token_type": "bearer", "role": user.role}
+
+@app.post("/auth/admin/login", response_model=schemas.Token)
+async def admin_login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.email == form_data.username).first()
+    if not user or not verify_password(form_data.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized to access admin portal")
+    
+    access_token_expires = timedelta(minutes=30)
+    access_token = create_access_token(
+        data={"sub": user.email, "role": "admin"}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer", "role": user.role}
 
 # Product Endpoints
 @app.get("/products/", response_model=List[schemas.Product])
@@ -60,7 +91,7 @@ def read_products(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
     return products
 
 @app.get("/products/{product_id}", response_model=schemas.Product)
-def read_product(product_id: str, db: Session = Depends(get_db)):
+def read_product(product_id: UUID, db: Session = Depends(get_db)):
     db_product = db.query(models.Product).filter(models.Product.id == product_id).first()
     if db_product is None:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -80,7 +111,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
         password_hash=hashed_password,
         full_name=user.full_name,
         phone=user.phone,
-        role=user.role,
+        role="customer", # Force customer role for public registration
         locale=user.locale
     )
     db.add(db_user)
@@ -224,11 +255,10 @@ def create_order(order: schemas.OrderCreate, db: Session = Depends(get_db), curr
         tax=tax,
         total=total,
         currency="CHF",
-    payment_method=order.payment_method,
-    payment_intent_id=None, # Will be updated after payment processing
-    notes=order.notes,
-    items=order_items
-
+        payment_method=order.payment_method,
+        payment_intent_id=None, # Will be updated after payment processing
+        notes=order.notes,
+        items=order_items
     )
     # Process payment based on method
     if order.payment_method == "twint":
@@ -270,9 +300,7 @@ def read_user_orders(user_id: UUID, db: Session = Depends(get_db), current_user:
     return orders
 
 @app.put("/orders/{order_id}/status", response_model=schemas.Order)
-def update_order_status(order_id: UUID, new_status: str, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can update order status")
+def update_order_status(order_id: UUID, new_status: str, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
     db_order = db.query(models.Order).filter(models.Order.id == order_id).first()
     if db_order is None:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -293,9 +321,7 @@ def update_order_status(order_id: UUID, new_status: str, db: Session = Depends(g
 
 # Product Specification Endpoints
 @app.post("/products/{product_id}/specifications/", response_model=schemas.ProductSpecification)
-def create_product_specification(product_id: UUID, spec: schemas.ProductSpecificationCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can add product specifications")
+def create_product_specification(product_id: UUID, spec: schemas.ProductSpecificationCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
     db_spec = models.ProductSpecification(product_id=product_id, spec=spec.spec)
     db.add(db_spec)
     db.commit()
@@ -309,9 +335,7 @@ def read_product_specifications(product_id: UUID, db: Session = Depends(get_db))
 
 # Product Image Endpoints
 @app.post("/products/{product_id}/images/", response_model=schemas.ProductImage)
-def create_product_image(product_id: UUID, image: schemas.ProductImageCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can add product images")
+def create_product_image(product_id: UUID, image: schemas.ProductImageCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
     db_image = models.ProductImage(product_id=product_id, url=image.url, alt_text=image.alt_text, sort_order=image.sort_order)
     db.add(db_image)
     db.commit()
@@ -355,9 +379,7 @@ def mark_notification_as_read(notification_id: UUID, db: Session = Depends(get_d
 
 # Supplier Endpoints
 @app.post("/suppliers/", response_model=schemas.Supplier)
-def create_supplier(supplier: schemas.SupplierCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can create suppliers")
+def create_supplier(supplier: schemas.SupplierCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
     db_supplier = models.Supplier(**supplier.dict())
     db.add(db_supplier)
     db.commit()
@@ -378,9 +400,7 @@ def read_supplier(supplier_id: str, db: Session = Depends(get_db)):
 
 # Supplier Order Endpoints
 @app.post("/supplier_orders/", response_model=schemas.SupplierOrder)
-def create_supplier_order(supplier_order: schemas.SupplierOrderCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can create supplier orders")
+def create_supplier_order(supplier_order: schemas.SupplierOrderCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
     db_supplier_order = models.SupplierOrder(**supplier_order.dict())
     db.add(db_supplier_order)
     db.commit()
@@ -388,16 +408,12 @@ def create_supplier_order(supplier_order: schemas.SupplierOrderCreate, db: Sessi
     return db_supplier_order
 
 @app.get("/supplier_orders/", response_model=List[schemas.SupplierOrder])
-def read_supplier_orders(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can view supplier orders")
+def read_supplier_orders(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
     supplier_orders = db.query(models.SupplierOrder).offset(skip).limit(limit).all()
     return supplier_orders
 
 @app.get("/supplier_orders/{order_id}", response_model=schemas.SupplierOrder)
-def read_supplier_order(order_id: UUID, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can view supplier orders")
+def read_supplier_order(order_id: UUID, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
     db_supplier_order = db.query(models.SupplierOrder).filter(models.SupplierOrder.id == order_id).first()
     if db_supplier_order is None:
         raise HTTPException(status_code=404, detail="Supplier Order not found")
@@ -405,9 +421,7 @@ def read_supplier_order(order_id: UUID, db: Session = Depends(get_db), current_u
 
 # Supplier Order Item Endpoints
 @app.post("/supplier_order_items/", response_model=schemas.SupplierOrderItem)
-def create_supplier_order_item(item: schemas.SupplierOrderItemCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can create supplier order items")
+def create_supplier_order_item(item: schemas.SupplierOrderItemCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
     db_item = models.SupplierOrderItem(**item.dict())
     db.add(db_item)
     db.commit()
@@ -415,17 +429,13 @@ def create_supplier_order_item(item: schemas.SupplierOrderItemCreate, db: Sessio
     return db_item
 
 @app.get("/supplier_orders/{order_id}/items/", response_model=List[schemas.SupplierOrderItem])
-def read_supplier_order_items(order_id: UUID, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can view supplier order items")
+def read_supplier_order_items(order_id: UUID, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
     items = db.query(models.SupplierOrderItem).filter(models.SupplierOrderItem.supplier_order_id == order_id).all()
     return items
 
 # Supplier Payment Endpoints
 @app.post("/supplier_payments/", response_model=schemas.SupplierPayment)
-def create_supplier_payment(payment: schemas.SupplierPaymentCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can create supplier payments")
+def create_supplier_payment(payment: schemas.SupplierPaymentCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
     db_payment = models.SupplierPayment(**payment.dict())
     db.add(db_payment)
     db.commit()
@@ -433,9 +443,7 @@ def create_supplier_payment(payment: schemas.SupplierPaymentCreate, db: Session 
     return db_payment
 
 @app.get("/suppliers/{supplier_id}/payments/", response_model=List[schemas.SupplierPayment])
-def read_supplier_payments(supplier_id: str, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can view supplier payments")
+def read_supplier_payments(supplier_id: str, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
     payments = db.query(models.SupplierPayment).filter(models.SupplierPayment.supplier_id == supplier_id).all()
     return payments
 

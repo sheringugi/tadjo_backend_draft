@@ -93,6 +93,12 @@ def read_products(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
 @app.post("/products/", response_model=schemas.Product)
 def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
     # Create the product
+
+    # Validate that the category exists
+    category = db.query(models.Category).filter(models.Category.id == product.category_id).first()
+    if not category:
+        raise HTTPException(status_code=404, detail=f"Category with id '{product.category_id}' not found.")
+
     product_data = product.dict(exclude={'specifications', 'images'})
     db_product = models.Product(**product_data)
     db.add(db_product)
@@ -144,6 +150,37 @@ def update_product(product_id: UUID, product_update: schemas.ProductUpdate, db: 
 @app.get("/categories/", response_model=List[schemas.Category])
 def read_categories(db: Session = Depends(get_db)):
     return db.query(models.Category).all()
+
+@app.post("/categories/", response_model=schemas.Category)
+def create_category(category: schemas.CategoryCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    db_category = models.Category(**category.dict())
+    db.add(db_category)
+    db.commit()
+    db.refresh(db_category)
+    return db_category
+
+@app.put("/categories/{category_id}", response_model=schemas.Category)
+def update_category(category_id: str, category_update: schemas.CategoryUpdate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    db_category = db.query(models.Category).filter(models.Category.id == category_id).first()
+    if not db_category:
+        raise HTTPException(status_code=404, detail="Category not found")
+    
+    update_data = category_update.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_category, key, value)
+    
+    db.commit()
+    db.refresh(db_category)
+    return db_category
+
+@app.delete("/categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_category(category_id: str, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    db_category = db.query(models.Category).filter(models.Category.id == category_id).first()
+    if not db_category:
+        raise HTTPException(status_code=404, detail="Category not found")
+    db.delete(db_category)
+    db.commit()
+    return
 
 # User Endpoints
 @app.post("/users/", response_model=schemas.User)

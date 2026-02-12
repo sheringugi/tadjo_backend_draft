@@ -101,6 +101,8 @@ class Product(ProductBase):
     review_count: int
     created_at: datetime
     updated_at: datetime
+    specifications: List[ProductSpecification] = []
+    images: List[ProductImage] = []
 
     class Config:
         from_attributes = True
@@ -114,6 +116,11 @@ class CategoryBase(BaseModel):
 
 class CategoryCreate(CategoryBase):
     pass
+
+class CategoryUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    sort_order: Optional[int] = None
 
 class Category(CategoryBase):
     created_at: datetime

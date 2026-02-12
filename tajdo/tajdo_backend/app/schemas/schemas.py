@@ -30,6 +30,36 @@ class User(UserBase):
     class Config:
         from_attributes = True
 
+# ProductSpecification Schemas (Moved up for nested creation)
+class ProductSpecificationBase(BaseModel):
+    product_id: Optional[UUID] = None
+    spec: str
+
+class ProductSpecificationCreate(ProductSpecificationBase):
+    pass
+
+class ProductSpecification(ProductSpecificationBase):
+    id: UUID
+
+    class Config:
+        from_attributes = True
+
+# ProductImage Schemas (Moved up for nested creation)
+class ProductImageBase(BaseModel):
+    product_id: Optional[UUID] = None
+    url: str
+    alt_text: Optional[str] = None
+    sort_order: int = 0
+
+class ProductImageCreate(ProductImageBase):
+    pass
+
+class ProductImage(ProductImageBase):
+    id: UUID
+
+    class Config:
+        from_attributes = True
+
 # Product Schemas
 class ProductBase(BaseModel):
     sku: Optional[str] = None
@@ -42,11 +72,28 @@ class ProductBase(BaseModel):
     badge: Optional[str] = None
     material: Optional[str] = None
     color: Optional[str] = None
+    group_id: Optional[UUID] = None
     in_stock: bool = True
     shipping_days: int = 5
 
 class ProductCreate(ProductBase):
-    pass
+    specifications: Optional[List[ProductSpecificationCreate]] = []
+    images: Optional[List[ProductImageCreate]] = []
+
+class ProductUpdate(BaseModel):
+    sku: Optional[str] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    price: Optional[Decimal] = None
+    original_price: Optional[Decimal] = None
+    category_id: Optional[str] = None
+    image_url: Optional[str] = None
+    badge: Optional[str] = None
+    material: Optional[str] = None
+    color: Optional[str] = None
+    group_id: Optional[UUID] = None
+    in_stock: Optional[bool] = None
+    shipping_days: Optional[int] = None
 
 class Product(ProductBase):
     id: UUID
@@ -365,36 +412,6 @@ class RescueContributionCreate(RescueContributionBase):
 class RescueContribution(RescueContributionBase):
     id: UUID
     created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-# ProductSpecification Schemas
-class ProductSpecificationBase(BaseModel):
-    product_id: UUID
-    spec: str
-
-class ProductSpecificationCreate(ProductSpecificationBase):
-    pass
-
-class ProductSpecification(ProductSpecificationBase):
-    id: UUID
-
-    class Config:
-        from_attributes = True
-
-# ProductImage Schemas
-class ProductImageBase(BaseModel):
-    product_id: UUID
-    url: str
-    alt_text: Optional[str] = None
-    sort_order: int = 0
-
-class ProductImageCreate(ProductImageBase):
-    pass
-
-class ProductImage(ProductImageBase):
-    id: UUID
 
     class Config:
         from_attributes = True

@@ -79,6 +79,7 @@ class Product(Base):
     badge = Column(String)
     material = Column(String)
     color = Column(String)
+    group_id = Column(UUID(as_uuid=True), nullable=True)
     in_stock = Column(Boolean, default=True)
     shipping_days = Column(Integer, default=5)
     manufacturing_cost = Column(Numeric(10, 2), default=0)

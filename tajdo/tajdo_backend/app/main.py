@@ -90,11 +90,54 @@ def read_products(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
     products = db.query(models.Product).offset(skip).limit(limit).all()
     return products
 
+@app.post("/products/", response_model=schemas.Product)
+def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    # Create the product
+    product_data = product.dict(exclude={'specifications', 'images'})
+    db_product = models.Product(**product_data)
+    db.add(db_product)
+    db.flush() # Flush to get the product ID before creating related items
+
+    # Create nested specifications
+    if product.specifications:
+        for spec in product.specifications:
+            db_spec = models.ProductSpecification(product_id=db_product.id, spec=spec.spec)
+            db.add(db_spec)
+
+    # Create nested images
+    if product.images:
+        for image in product.images:
+            db_image = models.ProductImage(
+                product_id=db_product.id, 
+                url=image.url, 
+                alt_text=image.alt_text, 
+                sort_order=image.sort_order
+            )
+            db.add(db_image)
+
+    db.commit()
+    db.refresh(db_product)
+    return db_product
+
 @app.get("/products/{product_id}", response_model=schemas.Product)
 def read_product(product_id: UUID, db: Session = Depends(get_db)):
     db_product = db.query(models.Product).filter(models.Product.id == product_id).first()
     if db_product is None:
         raise HTTPException(status_code=404, detail="Product not found")
+    return db_product
+
+@app.put("/products/{product_id}", response_model=schemas.Product)
+def update_product(product_id: UUID, product_update: schemas.ProductUpdate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    db_product = db.query(models.Product).filter(models.Product.id == product_id).first()
+    if not db_product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    update_data = product_update.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_product, key, value)
+    
+    db.commit()
+    db.refresh(db_product)
     return db_product
 
 # Category Endpoints

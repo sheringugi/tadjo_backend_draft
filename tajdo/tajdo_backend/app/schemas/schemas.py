@@ -65,7 +65,58 @@ class CategoryBase(BaseModel):
     description: Optional[str] = None
     sort_order: int = 0
 
+class CategoryCreate(CategoryBase):
+    pass
+
 class Category(CategoryBase):
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Address Schemas
+class AddressBase(BaseModel):
+    label: str = "Home"
+    line1: str
+    line2: Optional[str] = None
+    city: str
+    state: Optional[str] = None
+    postal_code: str
+    country: str = "CH"
+    is_default: bool = False
+
+class AddressCreate(AddressBase):
+    user_id: UUID
+
+class Address(AddressBase):
+    id: UUID
+    user_id: UUID
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Wishlist Schemas
+class WishlistBase(BaseModel):
+    product_id: UUID
+
+class Wishlist(WishlistBase):
+    user_id: UUID
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# CartItem Schemas
+class CartItemBase(BaseModel):
+    product_id: UUID
+    quantity: int = 1
+
+class CartItemCreate(CartItemBase):
+    user_id: UUID
+
+class CartItem(CartItemBase):
+    user_id: UUID
     created_at: datetime
 
     class Config:
@@ -75,6 +126,9 @@ class Category(CategoryBase):
 class OrderItemBase(BaseModel):
     product_id: UUID
     quantity: int
+
+class OrderItemCreate(OrderItemBase):
+    pass
 
 class OrderItem(OrderItemBase):
     id: UUID
@@ -91,7 +145,13 @@ class OrderBase(BaseModel):
     payment_method: Optional[str] = None
 
 class OrderCreate(OrderBase):
-    items: List[OrderItemBase]
+    user_id: UUID
+    items: List[OrderItemCreate]
+    card_details: Optional[CardDetails] = None # For card payments
+    # Twint payment typically involves a redirect and callback, 
+    # so direct details here might not be applicable for initial creation.
+    # We'll assume a payment_method of 'twint' implies a pre-arranged flow or a placeholder.
+
 
 class Order(OrderBase):
     id: UUID
@@ -109,3 +169,239 @@ class Order(OrderBase):
 
     class Config:
         from_attributes = True
+
+# OrderStatusHistory Schemas
+class OrderStatusHistoryBase(BaseModel):
+    order_id: UUID
+    old_status: Optional[str] = None
+    new_status: str
+    note: Optional[str] = None
+
+class OrderStatusHistoryCreate(OrderStatusHistoryBase):
+    pass
+
+class OrderStatusHistory(OrderStatusHistoryBase):
+    id: UUID
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Notification Schemas
+class NotificationBase(BaseModel):
+    user_id: UUID
+    order_id: Optional[UUID] = None
+    type: str
+    title: str
+    message: str
+    is_read: bool = False
+
+class NotificationCreate(NotificationBase):
+    pass
+
+class Notification(NotificationBase):
+    id: UUID
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Supplier Schemas
+class SupplierBase(BaseModel):
+    id: str
+    name: str
+    type: str
+    location: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    default_lead_time: int = 14
+    notes: Optional[str] = None
+
+class SupplierCreate(SupplierBase):
+    pass
+
+class Supplier(SupplierBase):
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# SupplierOrder Schemas
+class SupplierOrderBase(BaseModel):
+    order_number: str
+    supplier_id: str
+    customer_order_id: Optional[UUID] = None
+    status: str = "pending"
+    total_cost: Decimal = 0
+    currency: str = "USD"
+    estimated_delivery_days: int = 14
+    tracking_number: Optional[str] = None
+    notes: Optional[str] = None
+
+class SupplierOrderCreate(SupplierOrderBase):
+    pass
+
+class SupplierOrder(SupplierOrderBase):
+    id: UUID
+    created_at: datetime
+    confirmed_at: Optional[datetime] = None
+    in_production_at: Optional[datetime] = None
+    shipped_at: Optional[datetime] = None
+    received_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+# SupplierOrderItem Schemas
+class SupplierOrderItemBase(BaseModel):
+    supplier_order_id: UUID
+    product_id: UUID
+    product_name: str
+    quantity: int
+    unit_cost: Decimal = 0
+
+class SupplierOrderItemCreate(SupplierOrderItemBase):
+    pass
+
+class SupplierOrderItem(SupplierOrderItemBase):
+    id: UUID
+
+    class Config:
+        from_attributes = True
+
+# SupplierPayment Schemas
+class SupplierPaymentBase(BaseModel):
+    supplier_id: str
+    supplier_order_id: Optional[UUID] = None
+    amount: Decimal
+    currency: str = "USD"
+    method: Optional[str] = None
+    reference: Optional[str] = None
+
+class SupplierPaymentCreate(SupplierPaymentBase):
+    pass
+
+class SupplierPayment(SupplierPaymentBase):
+    id: UUID
+    paid_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Complaint Schemas
+class ComplaintBase(BaseModel):
+    user_id: UUID
+    order_id: Optional[UUID] = None
+    subject: str
+    message: str
+    status: str = "open"
+    resolution: Optional[str] = None
+
+class ComplaintCreate(ComplaintBase):
+    pass
+
+class Complaint(ComplaintBase):
+    id: UUID
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Return Schemas
+class ReturnBase(BaseModel):
+    order_id: UUID
+    user_id: UUID
+    reason: str
+    status: str = "requested"
+    refund_amount: Optional[Decimal] = None
+    notes: Optional[str] = None
+
+class ReturnCreate(ReturnBase):
+    pass
+
+class Return(ReturnBase):
+    id: UUID
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Review Schemas
+class ReviewBase(BaseModel):
+    product_id: UUID
+    user_id: UUID
+    rating: int = Field(..., ge=1, le=5)
+    title: Optional[str] = None
+    body: Optional[str] = None
+
+class ReviewCreate(ReviewBase):
+    pass
+
+class Review(ReviewBase):
+    id: UUID
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# RescueContribution Schemas
+class RescueContributionBase(BaseModel):
+    order_id: UUID
+    amount: Decimal
+    currency: str = "CHF"
+
+class RescueContributionCreate(RescueContributionBase):
+    pass
+
+class RescueContribution(RescueContributionBase):
+    id: UUID
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# ProductSpecification Schemas
+class ProductSpecificationBase(BaseModel):
+    product_id: UUID
+    spec: str
+
+class ProductSpecificationCreate(ProductSpecificationBase):
+    pass
+
+class ProductSpecification(ProductSpecificationBase):
+    id: UUID
+
+    class Config:
+        from_attributes = True
+
+# ProductImage Schemas
+class ProductImageBase(BaseModel):
+    product_id: UUID
+    url: str
+    alt_text: Optional[str] = None
+    sort_order: int = 0
+
+class ProductImageCreate(ProductImageBase):
+    pass
+
+class ProductImage(ProductImageBase):
+    id: UUID
+
+    class Config:
+        from_attributes = True
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    email: Optional[str] = None
+
+class CardDetails(BaseModel):
+    card_number: str
+    exp_month: int
+    exp_year: int
+    cvc: str
+    card_holder_name: Optional[str] = None

@@ -9,11 +9,14 @@ This is a full-featured backend for the Tajdo Online Store, built with **Python*
 - **PostgreSQL**: Robust and scalable relational database (schema provided).
 - **Pydantic**: Data validation and settings management using Python type annotations.
 - **Modular Architecture**: Clean separation of concerns with models, schemas, and API routes.
+- **Authentication**: JWT-based authentication for secure API access.
+- **Alembic**: Database migration tool for managing schema changes.
 
 ## Project Structure
 
 ```text
 tajdo_backend/
+├── alembic/            # Alembic migration scripts
 ├── app/
 │   ├── api/            # API route handlers
 │   ├── core/           # Core configuration and security
@@ -23,6 +26,7 @@ tajdo_backend/
 │   ├── services/       # Business logic layer
 │   └── main.py         # Application entry point
 ├── requirements.txt    # Project dependencies
+├── .env.example        # Example environment variables
 └── README.md           # Project documentation
 ```
 
@@ -31,7 +35,7 @@ tajdo_backend/
 ### Prerequisites
 
 - Python 3.11+
-- PostgreSQL instance
+- PostgreSQL instance (running and accessible)
 
 ### Installation
 
@@ -41,11 +45,20 @@ tajdo_backend/
     pip install -r requirements.txt
     ```
 3.  **Set up environment variables**:
-    Create a `.env` file in the root directory and add your database URL:
+    Create a `.env` file in the root directory (or rename `.env.example` to `.env`) and add your database URL:
     ```env
     DATABASE_URL=postgresql://user:password@localhost/dbname
+    SECRET_KEY=your-super-secret-key
     ```
-4.  **Run the application**:
+    Replace `user`, `password`, `localhost`, and `dbname` with your PostgreSQL credentials. Also, replace `your-super-secret-key` with a strong, random secret key.
+
+4.  **Run database migrations**:
+    ```bash
+    alembic upgrade head
+    ```
+    This will create all necessary tables in your PostgreSQL database based on the SQLAlchemy models.
+
+5.  **Run the application**:
     ```bash
     uvicorn app.main:app --reload
     ```
@@ -64,3 +77,5 @@ Once the application is running, you can access the interactive API documentatio
 - **Asynchronous Support**: Leveraging FastAPI's async capabilities for high performance.
 - **Schema Validation**: Strict data validation using Pydantic.
 - **Clean Code**: Organized directory structure and clear naming conventions.
+- **Authentication**: Secure JWT-based authentication.
+- **Database Migrations**: Managed with Alembic for controlled schema evolution.

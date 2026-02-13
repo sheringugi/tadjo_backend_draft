@@ -208,6 +208,11 @@ async def read_users_me(current_user: schemas.User = Depends(get_current_user)):
 def create_address(address: schemas.AddressCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
     if str(address.user_id) != str(current_user.id):
         raise HTTPException(status_code=403, detail="Not authorized to create address for this user")
+    
+    # If the new address is set as default, unset is_default for all other addresses of this user
+    if address.is_default:
+        db.query(models.Address).filter(models.Address.user_id == address.user_id).update({"is_default": False})
+
     db_address = models.Address(**address.dict())
     db.add(db_address)
     db.commit()
@@ -224,6 +229,13 @@ def read_user_addresses(user_id: UUID, db: Session = Depends(get_db), current_us
 # Wishlist Endpoints
 @app.post("/wishlists/", response_model=schemas.Wishlist)
 def add_to_wishlist(wishlist_item: schemas.WishlistBase, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
+    existing_item = db.query(models.Wishlist).filter(
+        models.Wishlist.user_id == current_user.id,
+        models.Wishlist.product_id == wishlist_item.product_id
+    ).first()
+    if existing_item:
+        return existing_item
+
     db_wishlist_item = models.Wishlist(user_id=current_user.id, **wishlist_item.dict())
     db.add(db_wishlist_item)
     db.commit()
@@ -273,14 +285,14 @@ def read_user_cart_items(user_id: UUID, db: Session = Depends(get_db), current_u
     return cart_items
 
 @app.put("/cart/items/{product_id}", response_model=schemas.CartItem)
-def update_cart_item(product_id: UUID, cart_item: schemas.CartItemBase, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
+def update_cart_item(product_id: UUID, cart_item_update: schemas.CartItemUpdate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
     db_cart_item = db.query(models.CartItem).filter(
         models.CartItem.user_id == current_user.id,
         models.CartItem.product_id == product_id
     ).first()
     if db_cart_item is None:
         raise HTTPException(status_code=404, detail="Item not found in cart")
-    db_cart_item.quantity = cart_item.quantity
+    db_cart_item.quantity = cart_item_update.quantity
     db.commit()
     db.refresh(db_cart_item)
     return db_cart_item
@@ -304,15 +316,16 @@ def create_order(order: schemas.OrderCreate, db: Session = Depends(get_db), curr
         raise HTTPException(status_code=403, detail="Not authorized to create order for this user")
 
     # Calculate subtotal, tax, total
-    subtotal = Decimal(0)
+    gross_total = Decimal(0)
     order_items = []
     for item in order.items:
         product = db.query(models.Product).filter(models.Product.id == item.product_id).first()
         if not product:
             raise HTTPException(status_code=404, detail=f"Product with ID {item.product_id} not found")
         
+        # In a Tax Inclusive model, the product price is the gross price
         item_total = product.price * item.quantity
-        subtotal += item_total
+        gross_total += item_total
         order_items.append(models.OrderItem(
             product_id=item.product_id,
             product_name=product.name,
@@ -321,9 +334,26 @@ def create_order(order: schemas.OrderCreate, db: Session = Depends(get_db), curr
             total=item_total
         ))
     
-    shipping_cost = Decimal(0) # Placeholder
-    tax = subtotal * Decimal(0.08) # Assuming 8% tax
-    total = subtotal + shipping_cost + tax
+    shipping_cost = Decimal(0) # DDP Shipping (Free to customer)
+    
+    # Tax Inclusive Calculation (Switzerland Standard Rate 8.1%)
+    # Formula: Tax = Total - (Total / (1 + Rate))
+    tax_rate = Decimal("0.081")
+    total = gross_total + shipping_cost
+    
+    # Calculate the net amount (pre-tax)
+    net_total = total / (1 + tax_rate)
+    
+    # Extract the tax amount
+    tax = total - net_total
+    
+    # Subtotal in DB usually refers to pre-tax amount of items
+    subtotal = net_total
+    
+    # Rounding to 2 decimal places for currency
+    tax = tax.quantize(Decimal("0.01"))
+    subtotal = subtotal.quantize(Decimal("0.01"))
+    total = total.quantize(Decimal("0.01"))
 
     db_order = models.Order(
         order_number=f"ORD-{uuid.uuid4().hex[:6].upper()}",
@@ -361,7 +391,21 @@ def create_order(order: schemas.OrderCreate, db: Session = Depends(get_db), curr
     db.add(db_order)
     db.commit()
     db.refresh(db_order)
+
+    # Clear ordered items from the cart
+    for item in order.items:
+        db.query(models.CartItem).filter(
+            models.CartItem.user_id == current_user.id,
+            models.CartItem.product_id == item.product_id
+        ).delete()
+    db.commit()
+
     return db_order
+
+@app.get("/admin/orders/", response_model=List[schemas.Order])
+def read_all_orders(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    orders = db.query(models.Order).offset(skip).limit(limit).all()
+    return orders
 
 @app.get("/orders/{order_id}", response_model=schemas.Order)
 def read_order(order_id: UUID, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
@@ -380,7 +424,7 @@ def read_user_orders(user_id: UUID, db: Session = Depends(get_db), current_user:
     return orders
 
 @app.put("/orders/{order_id}/status", response_model=schemas.Order)
-def update_order_status(order_id: UUID, new_status: str, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+def update_order_status(order_id: UUID, new_status: str, tracking_number: Optional[str] = None, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
     db_order = db.query(models.Order).filter(models.Order.id == order_id).first()
     if db_order is None:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -395,6 +439,9 @@ def update_order_status(order_id: UUID, new_status: str, db: Session = Depends(g
     db.add(status_history)
 
     db_order.status = new_status
+    if tracking_number:
+        db_order.tracking_number = tracking_number
+
     db.commit()
     db.refresh(db_order)
     return db_order
@@ -432,6 +479,14 @@ def read_product_images(product_id: UUID, db: Session = Depends(get_db)):
 def create_notification(notification: schemas.NotificationCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
     if str(notification.user_id) != str(current_user.id) and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized to create notification for this user")
+    
+    if notification.order_id:
+        db_order = db.query(models.Order).filter(models.Order.id == notification.order_id).first()
+        if not db_order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        if str(db_order.user_id) != str(notification.user_id):
+            raise HTTPException(status_code=400, detail="Notification user_id does not match the order's user_id")
+            
     db_notification = models.Notification(**notification.dict())
     db.add(db_notification)
     db.commit()
@@ -528,6 +583,11 @@ def read_supplier_payments(supplier_id: str, db: Session = Depends(get_db), curr
     return payments
 
 # Complaint Endpoints
+@app.get("/admin/complaints/", response_model=List[schemas.Complaint])
+def read_all_complaints(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    complaints = db.query(models.Complaint).offset(skip).limit(limit).all()
+    return complaints
+
 @app.post("/complaints/", response_model=schemas.Complaint)
 def create_complaint(complaint: schemas.ComplaintCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
     if str(complaint.user_id) != str(current_user.id):
@@ -546,6 +606,11 @@ def read_user_complaints(user_id: UUID, db: Session = Depends(get_db), current_u
     return complaints
 
 # Return Endpoints
+@app.get("/admin/returns/", response_model=List[schemas.Return])
+def read_all_returns(skip: int =0, limit: int =100, db: Session = Depends (get_db), current_user: schemas.User = Depends(get_current_admin)):
+    returns = db.query(models.Return).offset(skip).limit(limit).all
+    return returns
+
 @app.post("/returns/", response_model=schemas.Return)
 def create_return(return_request: schemas.ReturnCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
     if str(return_request.user_id) != str(current_user.id):
@@ -564,6 +629,11 @@ def read_user_returns(user_id: UUID, db: Session = Depends(get_db), current_user
     return returns
 
 # Review Endpoints
+@app.get("/admin/reviews/", response_model=List[schemas.Return])
+def read_all_reviews(skip: int =0, limit: int =100, db: Session = Depends (get_db), current_user: schemas.User = Depends(get_current_admin)):
+    reviews = db.query(models.Review).offset(skip).limit(limit).all
+    return reviews
+
 @app.post("/reviews/", response_model=schemas.Review)
 def create_review(review: schemas.ReviewCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
     if str(review.user_id) != str(current_user.id):

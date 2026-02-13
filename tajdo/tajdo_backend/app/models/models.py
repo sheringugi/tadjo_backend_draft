@@ -145,6 +145,7 @@ class Order(Base):
     payment_method = Column(String)
     payment_intent_id = Column(String)
     notes = Column(Text)
+    tracking_number = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

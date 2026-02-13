@@ -169,6 +169,9 @@ class CartItemBase(BaseModel):
 class CartItemCreate(CartItemBase):
     user_id: UUID
 
+class CartItemUpdate(BaseModel):
+    quantity: int
+
 class CartItem(CartItemBase):
     user_id: UUID
     created_at: datetime
@@ -224,6 +227,7 @@ class Order(OrderBase):
     tax: Decimal
     total: Decimal
     currency: str
+    tracking_number: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     items: List[OrderItem]

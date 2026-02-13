@@ -331,7 +331,9 @@ def create_order(order: schemas.OrderCreate, db: Session = Depends(get_db), curr
             product_name=product.name,
             unit_price=product.price,
             quantity=item.quantity,
-            total=item_total
+            total=item_total,
+            manufacturing_cost=product.manufacturing_cost,
+            transport_cost=product.transport_cost
         ))
     
     shipping_cost = Decimal(0) # DDP Shipping (Free to customer)
@@ -398,6 +400,15 @@ def create_order(order: schemas.OrderCreate, db: Session = Depends(get_db), curr
             models.CartItem.user_id == current_user.id,
             models.CartItem.product_id == item.product_id
         ).delete()
+
+    # Create Rescue Contribution (30% of total)
+    rescue_amount = (total * Decimal("0.30")).quantize(Decimal("0.01"))
+    db_rescue = models.RescueContribution(
+        order_id=db_order.id,
+        amount=rescue_amount,
+        currency=db_order.currency
+    )
+    db.add(db_rescue)
     db.commit()
 
     return db_order
@@ -592,6 +603,14 @@ def read_all_complaints(skip: int = 0, limit: int = 100, db: Session = Depends(g
 def create_complaint(complaint: schemas.ComplaintCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
     if str(complaint.user_id) != str(current_user.id):
         raise HTTPException(status_code=403, detail="Not authorized to create complaint for this user")
+    
+    if complaint.order_id:
+        db_order = db.query(models.Order).filter(models.Order.id == complaint.order_id).first()
+        if not db_order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        if str(db_order.user_id) != str(complaint.user_id):
+            raise HTTPException(status_code=400, detail="Complaint user_id does not match the order's user_id")
+            
     db_complaint = models.Complaint(**complaint.dict())
     db.add(db_complaint)
     db.commit()
@@ -608,13 +627,20 @@ def read_user_complaints(user_id: UUID, db: Session = Depends(get_db), current_u
 # Return Endpoints
 @app.get("/admin/returns/", response_model=List[schemas.Return])
 def read_all_returns(skip: int =0, limit: int =100, db: Session = Depends (get_db), current_user: schemas.User = Depends(get_current_admin)):
-    returns = db.query(models.Return).offset(skip).limit(limit).all
+    returns = db.query(models.Return).offset(skip).limit(limit).all()
     return returns
 
 @app.post("/returns/", response_model=schemas.Return)
 def create_return(return_request: schemas.ReturnCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
     if str(return_request.user_id) != str(current_user.id):
         raise HTTPException(status_code=403, detail="Not authorized to create return for this user")
+    
+    db_order = db.query(models.Order).filter(models.Order.id == return_request.order_id).first()
+    if not db_order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if str(db_order.user_id) != str(return_request.user_id):
+        raise HTTPException(status_code=400, detail="Return user_id does not match the order's user_id")
+
     db_return = models.Return(**return_request.dict())
     db.add(db_return)
     db.commit()
@@ -629,15 +655,27 @@ def read_user_returns(user_id: UUID, db: Session = Depends(get_db), current_user
     return returns
 
 # Review Endpoints
-@app.get("/admin/reviews/", response_model=List[schemas.Return])
+@app.get("/admin/reviews/", response_model=List[schemas.Review])
 def read_all_reviews(skip: int =0, limit: int =100, db: Session = Depends (get_db), current_user: schemas.User = Depends(get_current_admin)):
-    reviews = db.query(models.Review).offset(skip).limit(limit).all
+    reviews = db.query(models.Review).offset(skip).limit(limit).all()
     return reviews
 
 @app.post("/reviews/", response_model=schemas.Review)
 def create_review(review: schemas.ReviewCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
     if str(review.user_id) != str(current_user.id):
         raise HTTPException(status_code=403, detail="Not authorized to create review for this user")
+    
+    if not db.query(models.Product).filter(models.Product.id == review.product_id).first():
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    # Check if user has purchased the product
+    has_purchased = db.query(models.OrderItem).join(models.Order).filter(
+        models.Order.user_id == current_user.id,
+        models.OrderItem.product_id == review.product_id
+    ).first()
+    if not has_purchased:
+        raise HTTPException(status_code=403, detail="You must purchase this product to review it")
+
     db_review = models.Review(**review.dict())
     db.add(db_review)
     db.commit()
@@ -660,3 +698,8 @@ def read_rescue_contribution(order_id: UUID, db: Session = Depends(get_db), curr
     if order and (str(order.user_id) == str(current_user.id) or current_user.role == "admin"):
         return db_contribution
     raise HTTPException(status_code=403, detail="Not authorized to view this rescue contribution")
+
+@app.get("/admin/rescue-contributions/", response_model=List[schemas.RescueContribution])
+def read_all_rescue_contributions(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    contributions = db.query(models.RescueContribution).offset(skip).limit(limit).all()
+    return contributions

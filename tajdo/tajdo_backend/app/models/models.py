@@ -166,6 +166,8 @@ class OrderItem(Base):
     unit_price = Column(Numeric(10, 2), nullable=False)
     quantity = Column(Integer, nullable=False)
     total = Column(Numeric(10, 2), nullable=False)
+    manufacturing_cost = Column(Numeric(10, 2), default=0)
+    transport_cost = Column(Numeric(10, 2), default=0)
 
     order = relationship("Order", back_populates="items")
     product = relationship("Product", back_populates="order_items")

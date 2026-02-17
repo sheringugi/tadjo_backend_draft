@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -12,12 +13,23 @@ from .db.session import engine, Base, get_db
 from .models import models
 from .schemas import schemas
 from .core.security import verify_password, get_password_hash, create_access_token, decode_access_token
+from .core.config import settings
 
 # Create database tables
 # This is handled by Alembic migrations. It's good practice to not have this in the main app.
 # models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Tajdo Online Store API", version="1.0.0")
+
+# Set all CORS enabled origins
+if settings.BACKEND_CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.BACKEND_CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 

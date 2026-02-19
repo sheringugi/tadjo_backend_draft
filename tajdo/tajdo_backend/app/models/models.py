@@ -59,6 +59,7 @@ class Category(Base):
     id = Column(String, primary_key=True)
     name = Column(String, nullable=False)
     description = Column(Text)
+    image_url = Column(String)
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -150,6 +151,7 @@ class Order(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     user = relationship("User", back_populates="orders")
+    shipping_address = relationship("Address")
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
     status_history = relationship("OrderStatusHistory", back_populates="order", cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="order")

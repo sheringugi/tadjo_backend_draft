@@ -112,6 +112,7 @@ class CategoryBase(BaseModel):
     id: str
     name: str
     description: Optional[str] = None
+    image_url: Optional[str] = None
     sort_order: int = 0
 
 class CategoryCreate(CategoryBase):
@@ -120,6 +121,7 @@ class CategoryCreate(CategoryBase):
 class CategoryUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    image_url: Optional[str] = None
     sort_order: Optional[int] = None
 
 class Category(CategoryBase):
@@ -203,6 +205,23 @@ class CardDetails(BaseModel):
     cvc: str
     card_holder_name: Optional[str] = None
 
+# OrderStatusHistory Schemas (Moved up for nesting)
+class OrderStatusHistoryBase(BaseModel):
+    order_id: UUID
+    old_status: Optional[str] = None
+    new_status: str
+    note: Optional[str] = None
+
+class OrderStatusHistoryCreate(OrderStatusHistoryBase):
+    pass
+
+class OrderStatusHistory(OrderStatusHistoryBase):
+    id: UUID
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
 class OrderBase(BaseModel):
     shipping_address_id: Optional[UUID] = None
     notes: Optional[str] = None
@@ -212,6 +231,7 @@ class OrderCreate(OrderBase):
     user_id: UUID
     items: List[OrderItemCreate]
     card_details: Optional[CardDetails] = None # For card payments
+    payment_intent_id: Optional[str] = None
     # Twint payment typically involves a redirect and callback, 
     # so direct details here might not be applicable for initial creation.
     # We'll assume a payment_method of 'twint' implies a pre-arranged flow or a placeholder.
@@ -231,23 +251,9 @@ class Order(OrderBase):
     created_at: datetime
     updated_at: datetime
     items: List[OrderItem]
-
-    class Config:
-        from_attributes = True
-
-# OrderStatusHistory Schemas
-class OrderStatusHistoryBase(BaseModel):
-    order_id: UUID
-    old_status: Optional[str] = None
-    new_status: str
-    note: Optional[str] = None
-
-class OrderStatusHistoryCreate(OrderStatusHistoryBase):
-    pass
-
-class OrderStatusHistory(OrderStatusHistoryBase):
-    id: UUID
-    created_at: datetime
+    user: Optional[User] = None
+    shipping_address: Optional[Address] = None
+    status_history: List[OrderStatusHistory] = []
 
     class Config:
         from_attributes = True

@@ -6,7 +6,7 @@ from typing import List, Optional
 from uuid import UUID
 from decimal import Decimal
 import uuid
-from .services.payment_service import process_twint_payment, process_card_payment
+# from .services.payment_service import process_twint_payment, process_card_payment
 from datetime import timedelta
 
 from .db.session import engine, Base, get_db
@@ -14,6 +14,12 @@ from .models import models
 from .schemas import schemas
 from .core.security import verify_password, get_password_hash, create_access_token, decode_access_token
 from .core.config import settings
+from .dependencies import get_current_user, get_current_admin
+from .services.email_service import EmailService
+from app.routers import payments
+
+
+email_service = EmailService()
 
 # Create database tables
 # This is handled by Alembic migrations. It's good practice to not have this in the main app.
@@ -21,6 +27,8 @@ from .core.config import settings
 
 app = FastAPI(title="Tajdo Online Store API", version="1.0.0")
 
+# include routers for payment through stripe
+app.include_router(payments.router)
 # Set all CORS enabled origins
 if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(
@@ -30,33 +38,6 @@ if settings.BACKEND_CORS_ORIGINS:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
-async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    payload = decode_access_token(token)
-    if payload is None:
-        raise credentials_exception
-    email: str = payload.get("sub")
-    if email is None:
-        raise credentials_exception
-    user = db.query(models.User).filter(models.User.email == email).first()
-    if user is None:
-        raise credentials_exception
-    return user
-
-async def get_current_admin(current_user: schemas.User = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="The user doesn't have enough privileges"
-        )
-    return current_user
 
 @app.get("/")
 def read_root():
@@ -373,34 +354,17 @@ def create_order(order: schemas.OrderCreate, db: Session = Depends(get_db), curr
         order_number=f"ORD-{uuid.uuid4().hex[:6].upper()}",
         user_id=order.user_id,
         shipping_address_id=order.shipping_address_id,
-        status="pending",
+        status="processing", # Payment is confirmed on frontend before calling this
         subtotal=subtotal,
         shipping_cost=shipping_cost,
         tax=tax,
         total=total,
         currency="CHF",
         payment_method=order.payment_method,
-        payment_intent_id=None, # Will be updated after payment processing
+        payment_intent_id=order.payment_intent_id, # Pass from frontend
         notes=order.notes,
         items=order_items
     )
-    # Process payment based on method
-    if order.payment_method == "twint":
-        payment_result = process_twint_payment(float(total), db_order.currency)
-    elif order.payment_method == "card" and order.card_details:
-        payment_result = process_card_payment(float(total), db_order.currency, order.card_details.dict())
-    else:
-        # For other payment methods or if card details are missing for card payment,
-        # we can assume payment will be handled externally or is not required at this stage.
-        # For now, we'll just set status to pending and proceed.
-        payment_result = {"status": "pending", "transaction_id": None}
-
-    if payment_result["status"] == "succeeded":
-        db_order.status = "confirmed"
-        db_order.payment_intent_id = payment_result["transaction_id"]
-    elif payment_result["status"] == "failed":
-        db_order.status = "cancelled" # Or a specific 'payment_failed' status
-        raise HTTPException(status_code=400, detail=f"Payment failed: {payment_result.get('error', 'Unknown error')}")
     
     db.add(db_order)
     db.commit()
@@ -423,6 +387,25 @@ def create_order(order: schemas.OrderCreate, db: Session = Depends(get_db), curr
     db.add(db_rescue)
     db.commit()
 
+    # Create a notification for the user
+    notification = models.Notification(
+        user_id=db_order.user_id,
+        order_id=db_order.id,
+        type="order_confirmation",
+        title="Order Confirmed",
+        message=f"Thank you for your purchase! Your order {db_order.order_number} has been placed. We are preparing your order."
+    )
+    db.add(notification)
+    db.commit()
+    db.refresh(notification)
+
+    # Send confirmation email
+    try:
+        email_service.send_order_confirmation(db_order, current_user)
+    except Exception as e:
+        print(f"Failed to send confirmation email: {e}")
+        # Do not fail the order if email fails
+
     return db_order
 
 @app.get("/admin/orders/", response_model=List[schemas.Order])
@@ -438,6 +421,22 @@ def read_order(order_id: UUID, db: Session = Depends(get_db), current_user: sche
     if str(db_order.user_id) != str(current_user.id) and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized to view this order")
     return db_order
+
+@app.get("/orders/track")
+async def track_order(
+    order_number: str,
+    email: str,
+    db: Session = Depends(get_db)
+):
+    order = db.query(models.Order).filter(models.Order.order_number == order_number).first()
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    if order.user.email != email:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    return order
 
 @app.get("/users/{user_id}/orders/", response_model=List[schemas.Order])
 def read_user_orders(user_id: UUID, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
@@ -467,6 +466,53 @@ def update_order_status(order_id: UUID, new_status: str, tracking_number: Option
 
     db.commit()
     db.refresh(db_order)
+
+    # Determine notification message based on status
+    title = f"Order {new_status.capitalize()}"
+    message = f"The status of your order {db_order.order_number} has been updated to {new_status}."
+
+    if new_status == "processing":
+        message = f"We are preparing your order {db_order.order_number}."
+    elif new_status == "shipped":
+        title = "Order Shipped"
+        message = f"Great news! Your order {db_order.order_number} is on its way."
+        if tracking_number:
+            message += f" Tracking Number: {tracking_number}"
+    elif new_status == "delivered":
+        title = "Order Delivered"
+        message = f"Your order {db_order.order_number} has arrived! We hope you love your new items."
+    elif new_status == "cancelled":
+        title = "Order Cancelled"
+        message = f"Your order {db_order.order_number} has been cancelled. If you have questions, please contact us."
+    elif new_status == "refunded":
+        title = "Order Refunded"
+        message = f"A refund has been processed for your order {db_order.order_number}."
+
+    # Create a notification for the status update
+    notification = models.Notification(
+        user_id=db_order.user_id,
+        order_id=db_order.id,
+        type="order_status_update",
+        title=title,
+        message=message
+    )
+    db.add(notification)
+    db.commit()
+    db.refresh(notification)
+
+    # Send email notification for status update
+    try:
+        if new_status == "shipped":
+            email_service.send_order_shipped(db_order, db_order.user, tracking_number)
+        elif new_status == "delivered":
+            email_service.send_order_delivered(db_order, db_order.user)
+        elif new_status == "cancelled":
+            email_service.send_order_cancelled(db_order, db_order.user)
+        elif new_status == "refunded":
+            email_service.send_order_refunded(db_order, db_order.user)
+    except Exception as e:
+        print(f"Failed to send status update email: {e}")
+
     return db_order
 
 # Product Specification Endpoints

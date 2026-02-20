@@ -236,6 +236,8 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
         raise
     except Exception as e:
         print(f"CRITICAL ERROR creating user: {e}")
+        if "password cannot be longer than 72 bytes" in str(e):
+            raise HTTPException(status_code=400, detail="Password is too long. Maximum length is 72 bytes.")
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 @app.get("/users/me/", response_model=schemas.User)

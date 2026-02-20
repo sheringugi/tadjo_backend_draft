@@ -81,6 +81,27 @@ async def admin_login(form_data: OAuth2PasswordRequestForm = Depends(), db: Sess
 @app.get("/products/", response_model=List[schemas.Product])
 def read_products(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     products = db.query(models.Product).offset(skip).limit(limit).all()
+    
+    # Calculate average rating and review count efficiently
+    product_ids = [p.id for p in products]
+    reviews = db.query(models.Review).filter(models.Review.product_id.in_(product_ids)).all()
+    
+    reviews_map = {}
+    for r in reviews:
+        if r.product_id not in reviews_map:
+            reviews_map[r.product_id] = []
+        reviews_map[r.product_id].append(r)
+        
+    for product in products:
+        product_reviews = reviews_map.get(product.id, [])
+        if product_reviews:
+            avg_rating = sum(r.rating for r in product_reviews) / len(product_reviews)
+            product.rating = Decimal(avg_rating)
+            product.review_count = len(product_reviews)
+        else:
+            product.rating = Decimal(0)
+            product.review_count = 0
+            
     return products
 
 @app.post("/products/", response_model=schemas.Product)
@@ -123,6 +144,17 @@ def read_product(product_id: UUID, db: Session = Depends(get_db)):
     db_product = db.query(models.Product).filter(models.Product.id == product_id).first()
     if db_product is None:
         raise HTTPException(status_code=404, detail="Product not found")
+    
+    # Calculate rating
+    reviews = db.query(models.Review).filter(models.Review.product_id == product_id).all()
+    if reviews:
+        avg_rating = sum(r.rating for r in reviews) / len(reviews)
+        db_product.rating = Decimal(avg_rating)
+        db_product.review_count = len(reviews)
+    else:
+        db_product.rating = Decimal(0)
+        db_product.review_count = 0
+        
     return db_product
 
 @app.put("/products/{product_id}", response_model=schemas.Product)
@@ -739,6 +771,15 @@ def create_review(review: schemas.ReviewCreate, db: Session = Depends(get_db), c
     db.commit()
     db.refresh(db_review)
     return db_review
+
+@app.delete("/reviews/{review_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_review(review_id: UUID, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    db_review = db.query(models.Review).filter(models.Review.id == review_id).first()
+    if not db_review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    db.delete(db_review)
+    db.commit()
+    return
 
 @app.get("/products/{product_id}/reviews/", response_model=List[schemas.Review])
 def read_product_reviews(product_id: UUID, db: Session = Depends(get_db)):

@@ -10,3 +10,4 @@ python-dotenv
 alembic
 bcrypt
 stripe
+resend

@@ -216,6 +216,9 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
         if db_user:
             raise HTTPException(status_code=400, detail="Email already registered")
 
+        if len(user.password.encode('utf-8')) > 72:
+            raise HTTPException(status_code=400, detail="Password is too long. Maximum length is 72 bytes.")
+
         hashed_password = get_password_hash(user.password)
         db_user = models.User(
             email=user.email,

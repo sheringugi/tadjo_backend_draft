@@ -211,19 +211,29 @@ def delete_category(category_id: str, db: Session = Depends(get_db), current_use
 # User Endpoints
 @app.post("/users/", response_model=schemas.User)
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    hashed_password = get_password_hash(user.password)
-    db_user = models.User(
-        email=user.email,
-        password_hash=hashed_password,
-        full_name=user.full_name,
-        phone=user.phone,
-        role="customer", # Force customer role for public registration
-        locale=user.locale
-    )
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return db_user
+    try:
+        db_user = db.query(models.User).filter(models.User.email == user.email).first()
+        if db_user:
+            raise HTTPException(status_code=400, detail="Email already registered")
+
+        hashed_password = get_password_hash(user.password)
+        db_user = models.User(
+            email=user.email,
+            password_hash=hashed_password,
+            full_name=user.full_name,
+            phone=user.phone,
+            role="customer", # Force customer role for public registration
+            locale=user.locale
+        )
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+        return db_user
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"CRITICAL ERROR creating user: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 @app.get("/users/me/", response_model=schemas.User)
 async def read_users_me(current_user: schemas.User = Depends(get_current_user)):

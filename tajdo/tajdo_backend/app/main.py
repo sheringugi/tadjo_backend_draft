@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -39,6 +39,23 @@ if settings.BACKEND_CORS_ORIGINS:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+@app.middleware("http")
+async def debug_request_body(request: Request, call_next):
+    if request.method == "POST" and "/users/" in request.url.path:
+        try:
+            body = await request.body()
+            print(f"DEBUG: Raw request body: {body.decode('utf-8')}")
+            
+            # Restore body for the actual handler
+            async def receive():
+                return {"type": "http.request", "body": body, "more_body": False}
+            request._receive = receive
+        except Exception as e:
+            print(f"DEBUG: Error reading body: {e}")
+            
+    response = await call_next(request)
+    return response
 
 @app.get("/")
 def read_root():

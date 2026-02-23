@@ -11,3 +11,4 @@ alembic
 bcrypt
 stripe
 resend
+Pillow

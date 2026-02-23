@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Request
+from fastapi import FastAPI, Depends, HTTPException, status, Request, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -6,6 +6,8 @@ from typing import List, Optional
 from uuid import UUID
 from decimal import Decimal
 import uuid
+import shutil
+import os
 # from .services.payment_service import process_twint_payment, process_card_payment
 from datetime import timedelta
 
@@ -17,6 +19,9 @@ from .core.config import settings
 from .dependencies import get_current_user, get_current_admin
 from .services.email_service import EmailService
 from app.routers import payments
+from fastapi.staticfiles import StaticFiles
+from PIL import Image
+import io
 
 
 email_service = EmailService()
@@ -26,6 +31,10 @@ email_service = EmailService()
 # models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Tajdo Online Store API", version="1.0.0")
+
+# Mount static files directory for image uploads
+os.makedirs("static/images", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # include routers for payment through stripe
 app.include_router(payments.router)
@@ -94,6 +103,23 @@ async def admin_login(form_data: OAuth2PasswordRequestForm = Depends(), db: Sess
         data={"sub": user.email, "role": "admin"}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer", "role": user.role}
+
+# Upload Endpoint
+@app.post("/upload/image")
+async def upload_image(request: Request, file: UploadFile = File(...), current_user: schemas.User = Depends(get_current_admin)):
+    file_extension = file.filename.split(".")[-1]
+    filename = f"{uuid.uuid4()}.{file_extension}"
+    file_path = f"static/images/{filename}"
+    
+    # Resize image before saving
+    image = Image.open(file.file)
+    # Example: Resize to max 800x800, keeping aspect ratio
+    image.thumbnail((800, 800))
+    
+    # Save the resized image
+    image.save(file_path)
+        
+    return {"url": f"{request.base_url}static/images/{filename}"}
 
 # Product Endpoints
 @app.get("/products/", response_model=List[schemas.Product])

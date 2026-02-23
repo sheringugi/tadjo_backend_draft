@@ -212,12 +212,14 @@ def delete_category(category_id: str, db: Session = Depends(get_db), current_use
 @app.post("/users/", response_model=schemas.User)
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     try:
+        print(f"DEBUG: Received registration request for {user.email}")
+        print(f"DEBUG: Password length received: {len(user.password)}")
         db_user = db.query(models.User).filter(models.User.email == user.email).first()
         if db_user:
             raise HTTPException(status_code=400, detail="Email already registered")
 
         if len(user.password.encode('utf-8')) > 72:
-            raise HTTPException(status_code=400, detail="Password is too long. Maximum length is 72 bytes.")
+            raise HTTPException(status_code=400, detail=f"Password is too long. Received {len(user.password)} characters. Maximum length is 72 bytes.")
 
         hashed_password = get_password_hash(user.password)
         db_user = models.User(
@@ -237,7 +239,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     except Exception as e:
         print(f"CRITICAL ERROR creating user: {e}")
         if "password cannot be longer than 72 bytes" in str(e):
-            raise HTTPException(status_code=400, detail="Password is too long. Maximum length is 72 bytes.")
+            raise HTTPException(status_code=400, detail=f"Password is too long. Received {len(user.password)} characters. Maximum length is 72 bytes.")
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 @app.get("/users/me/", response_model=schemas.User)

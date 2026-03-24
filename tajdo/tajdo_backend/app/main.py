@@ -73,7 +73,17 @@ def read_root():
 
 @app.post("/token", response_model=schemas.Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    print(f"DEBUG: Login attempt. Username: '{form_data.username}'")
+    print(f"DEBUG: Login Password length: {len(form_data.password)}")
+    
     user = db.query(models.User).filter(models.User.email == form_data.username).first()
+    
+    if not user:
+        print(f"DEBUG: Login failed - User '{form_data.username}' NOT FOUND in database.")
+    elif not verify_password(form_data.password, user.password_hash):
+        print(f"DEBUG: Login failed - Password verification failed for '{form_data.username}'.")
+        print(f"DEBUG: Stored hash prefix: {user.password_hash[:7] if user.password_hash else 'None'}")
+
     if not user or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -265,6 +275,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail=f"Password is too long. Received {len(user.password)} characters. Maximum length is 72 bytes.")
 
         hashed_password = get_password_hash(user.password)
+        print(f"DEBUG: Registered user {user.email}. Hash length: {len(hashed_password)}")
         db_user = models.User(
             email=user.email,
             password_hash=hashed_password,

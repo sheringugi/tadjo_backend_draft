@@ -19,6 +19,8 @@ from .core.config import settings
 from .dependencies import get_current_user, get_current_admin
 from .services.email_service import EmailService
 from app.routers import payments
+from .core.twint_listener import start_twint_listener, check_emails
+import asyncio
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 import io
@@ -113,6 +115,16 @@ async def admin_login(form_data: OAuth2PasswordRequestForm = Depends(), db: Sess
         data={"sub": user.email, "role": "admin"}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer", "role": user.role}
+
+@app.post("/admin/debug/twint-check")
+async def manual_twint_check(current_user: schemas.User = Depends(get_current_admin)):
+    """
+    Manually triggers the TWINT email listener to check for new payments.
+    Useful for testing without waiting for the background interval.
+    """
+    print("DEBUG: Manually triggering TWINT check...")
+    await asyncio.to_thread(check_emails)
+    return {"message": "TWINT check completed. See console logs for details."}
 
 # Upload Endpoint
 @app.post("/upload/image")
@@ -454,11 +466,16 @@ def create_order(order: schemas.OrderCreate, db: Session = Depends(get_db), curr
     subtotal = subtotal.quantize(Decimal("0.01"))
     total = total.quantize(Decimal("0.01"))
 
+    # Determine initial status based on payment method
+    initial_status = "processing"
+    if order.payment_method == "twint":
+        initial_status = "pending_payment"
+
     db_order = models.Order(
         order_number=f"ORD-{uuid.uuid4().hex[:6].upper()}",
         user_id=order.user_id,
         shipping_address_id=order.shipping_address_id,
-        status="processing", # Payment is confirmed on frontend before calling this
+        status=initial_status,
         subtotal=subtotal,
         shipping_cost=shipping_cost,
         tax=tax,
@@ -497,18 +514,20 @@ def create_order(order: schemas.OrderCreate, db: Session = Depends(get_db), curr
         order_id=db_order.id,
         type="order_confirmation",
         title="Order Confirmed",
-        message=f"Thank you for your purchase! Your order {db_order.order_number} has been placed. We are preparing your order."
+        message=f"Thank you for your purchase! Your order {db_order.order_number} has been placed."
     )
     db.add(notification)
     db.commit()
     db.refresh(notification)
 
     # Send confirmation email
-    try:
-        email_service.send_order_confirmation(db_order, current_user)
-    except Exception as e:
-        print(f"Failed to send confirmation email: {e}")
-        # Do not fail the order if email fails
+    # For TWINT, we wait until payment is confirmed by the listener
+    if initial_status != "pending_payment":
+        try:
+            email_service.send_order_confirmation(db_order, current_user)
+        except Exception as e:
+            print(f"Failed to send confirmation email: {e}")
+            # Do not fail the order if email fails
 
     return db_order
 
@@ -874,3 +893,8 @@ def read_rescue_contribution(order_id: UUID, db: Session = Depends(get_db), curr
 def read_all_rescue_contributions(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
     contributions = db.query(models.RescueContribution).offset(skip).limit(limit).all()
     return contributions
+
+@app.on_event("startup")
+async def startup_event():
+    # Start the TWINT email listener in the background
+    asyncio.create_task(start_twint_listener())

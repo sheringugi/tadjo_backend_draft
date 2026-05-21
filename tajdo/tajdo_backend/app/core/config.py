@@ -8,7 +8,7 @@ class Settings:
     PROJECT_NAME: str = "Tajdo Online Store API"
     # CORS Origins
     # Load from env or default to localhost
-    _ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:8080,http://localhost:5173,http://localhost:3000,https://www.tajdo.shop")
+    _ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:8080,http://localhost:5173,http://localhost:3000,https://www.tajdo.shop,https://tajdo.shop")
     BACKEND_CORS_ORIGINS: List[str] = [origin.strip() for origin in _ALLOWED_ORIGINS.split(",") if origin.strip()]
 
     # TWINT Listener Settings

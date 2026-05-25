@@ -41,16 +41,16 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # include routers for payment through stripe
 app.include_router(payments.router)
+
 # Set all CORS enabled origins
-if settings.BACKEND_CORS_ORIGINS:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.BACKEND_CORS_ORIGINS,
-        allow_origin_regex=r"https://tajdo-frontend.*\.vercel\.app",
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS] if settings.BACKEND_CORS_ORIGINS else [],
+    allow_origin_regex=r"https://tajdo-frontend.*\.vercel\.app",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.middleware("http")
 async def debug_request_body(request: Request, call_next):
@@ -985,4 +985,3 @@ async def reset_password(request: schemas.ResetPasswordRequest, db: Session = De
     user.reset_token_expires = None
     db.commit()
     return {"message": "Password has been successfully reset."}
-    asyncio.create_task(start_twint_listener())

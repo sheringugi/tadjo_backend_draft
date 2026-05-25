@@ -30,6 +30,13 @@ class User(UserBase):
     class Config:
         from_attributes = True
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
 # ProductSpecification Schemas (Moved up for nested creation)
 class ProductSpecificationBase(BaseModel):
     product_id: Optional[UUID] = None
@@ -429,6 +436,64 @@ class RescueContributionCreate(RescueContributionBase):
 class RescueContribution(RescueContributionBase):
     id: UUID
     created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Service Schemas
+class ServiceBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    price: Decimal
+    duration_minutes: Optional[int] = 60
+    session_type: str = "online" # 'online', 'in-person'
+    is_active: bool = True
+
+class ServiceCreate(ServiceBase):
+    pass
+
+class ServiceUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    price: Optional[Decimal] = None
+    duration_minutes: Optional[int] = None
+    session_type: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class Service(ServiceBase):
+    id: UUID
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Booking Schemas
+class BookingBase(BaseModel):
+    service_id: UUID
+    dog_name: str
+    dog_breed: str
+    dog_age: str
+    preferred_time: str # Matches 'preferredTime' in Training.tsx state
+    issues: Optional[str] = None # Matches 'issues' field in Training.tsx
+
+class BookingCreate(BookingBase):
+    user_id: Optional[UUID] = None
+
+class BookingUpdate(BaseModel):
+    scheduled_at: Optional[datetime] = None
+    status: Optional[str] = None
+    payment_intent_id: Optional[str] = None
+    amount_paid: Optional[Decimal] = None
+
+class Booking(BookingBase):
+    id: UUID
+    user_id: UUID
+    scheduled_at: Optional[datetime] = None
+    status: str
+    payment_intent_id: Optional[str] = None
+    amount_paid: Optional[Decimal] = None
+    created_at: datetime
+    service: Optional[Service] = None
 
     class Config:
         from_attributes = True

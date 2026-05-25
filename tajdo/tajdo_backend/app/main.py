@@ -8,6 +8,7 @@ from decimal import Decimal
 import uuid
 import shutil
 import os
+from datetime import datetime, timedelta
 # from .services.payment_service import process_twint_payment, process_card_payment
 from datetime import timedelta
 
@@ -45,7 +46,7 @@ if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.BACKEND_CORS_ORIGINS,
-        allow_origin_regex=r"https://tadjo-frontend.*\.vercel\.app",
+        allow_origin_regex=r"https://tajdo-frontend.*\.vercel\.app",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -897,4 +898,91 @@ def read_all_rescue_contributions(skip: int = 0, limit: int = 100, db: Session =
 @app.on_event("startup")
 async def startup_event():
     # Start the TWINT email listener in the background
+    asyncio.create_task(start_twint_listener())
+
+# Service Endpoints
+@app.get("/services/", response_model=List[schemas.Service])
+def read_services(db: Session = Depends(get_db)):
+    return db.query(models.Service).filter(models.Service.is_active == True).all()
+
+@app.post("/services/", response_model=schemas.Service)
+def create_service(service: schemas.ServiceCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    db_service = models.Service(**service.dict())
+    db.add(db_service)
+    db.commit()
+    db.refresh(db_service)
+    return db_service
+
+# Booking Endpoints
+@app.post("/bookings/", response_model=schemas.Booking)
+def create_booking(booking: schemas.BookingCreate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
+    service = db.query(models.Service).filter(models.Service.id == booking.service_id).first()
+    if not service:
+        raise HTTPException(status_code=404, detail="Service not found")
+        
+    db_booking = models.Booking(
+        user_id=current_user.id,
+        **booking.dict(exclude={'user_id'})
+    )
+    db.add(db_booking)
+    db.commit()
+    db.refresh(db_booking)
+
+    # Notify admin via email
+    try:
+        email_service.send_admin_booking_notification(db_booking, current_user, service.name)
+    except Exception as e:
+        print(f"Failed to send booking notification email: {e}")
+
+    return db_booking
+
+@app.get("/users/me/bookings/", response_model=List[schemas.Booking])
+def read_my_bookings(db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
+    return db.query(models.Booking).filter(models.Booking.user_id == current_user.id).all()
+
+@app.get("/admin/bookings/", response_model=List[schemas.Booking])
+def read_all_bookings(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    return db.query(models.Booking).offset(skip).limit(limit).all()
+
+@app.put("/admin/bookings/{booking_id}/status", response_model=schemas.Booking)
+def update_booking_status(booking_id: UUID, booking_update: schemas.BookingUpdate, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    db_booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
+    if not db_booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+        
+    update_data = booking_update.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_booking, key, value)
+        
+    db.commit()
+    db.refresh(db_booking)
+    return db_booking
+
+@app.post("/auth/forgot-password")
+async def forgot_password(request: schemas.ForgotPasswordRequest, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.email == request.email).first()
+    if user:
+        token = str(uuid.uuid4())
+        user.reset_token = token
+        user.reset_token_expires = datetime.now() + timedelta(hours=1)
+        db.commit()
+        email_service.send_password_reset_email(user, token)
+    # Always return success to prevent email enumeration
+    return {"message": "If an account exists with this email, a reset link has been sent."}
+
+@app.post("/auth/reset-password")
+async def reset_password(request: schemas.ResetPasswordRequest, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(
+        models.User.reset_token == request.token,
+        models.User.reset_token_expires > datetime.now()
+    ).first()
+    
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+    
+    user.password_hash = get_password_hash(request.new_password)
+    user.reset_token = None
+    user.reset_token_expires = None
+    db.commit()
+    return {"message": "Password has been successfully reset."}
     asyncio.create_task(start_twint_listener())

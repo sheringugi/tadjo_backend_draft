@@ -26,6 +26,8 @@ class User(Base):
     locale = Column(String, default="en")
     two_fa_secret = Column(String)
     two_fa_enabled = Column(Boolean, default=False)
+    reset_token = Column(String, unique=True, index=True)
+    reset_token_expires = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -37,6 +39,7 @@ class User(Base):
     complaints = relationship("Complaint", back_populates="user", cascade="all, delete-orphan")
     returns = relationship("Return", back_populates="user", cascade="all, delete-orphan")
     reviews = relationship("Review", back_populates="user", cascade="all, delete-orphan")
+    bookings = relationship("Booking", back_populates="user", cascade="all, delete-orphan")
 
 class Address(Base):
     __tablename__ = "addresses"
@@ -313,3 +316,38 @@ class RescueContribution(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     order = relationship("Order", back_populates="rescue_contributions")
+
+class Service(Base):
+    __tablename__ = "services"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String, nullable=False)
+    description = Column(Text)
+    price = Column(Numeric(10, 2), nullable=False)
+    duration_minutes = Column(Integer, default=60)
+    session_type = Column(String, default="online")
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    bookings = relationship("Booking", back_populates="service")
+
+class Booking(Base):
+    __tablename__ = "bookings"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    service_id = Column(UUID(as_uuid=True), ForeignKey("services.id"), nullable=False)
+    
+    dog_name = Column(String, nullable=False)
+    dog_breed = Column(String, nullable=False)
+    dog_age = Column(String, nullable=False)
+    preferred_time = Column(String)
+    
+    scheduled_at = Column(DateTime(timezone=True))
+    status = Column(String, default="pending")
+    issues = Column(Text)
+    
+    payment_intent_id = Column(String)
+    amount_paid = Column(Numeric(10, 2))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="bookings")
+    service = relationship("Service", back_populates="bookings")

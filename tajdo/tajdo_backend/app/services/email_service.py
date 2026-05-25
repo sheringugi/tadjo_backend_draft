@@ -284,3 +284,87 @@ class EmailService:
         """
         
         return self.send_email(user.email, subject, html_content)
+
+    def send_password_reset_email(self, user, token: str):
+        """Send password reset email"""
+        subject = "Reset Your Password - TAJDO"
+        reset_link = f"http://localhost:5173/reset-password?token={token}"
+        
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: 'Inter', Arial, sans-serif; color: #333; line-height: 1.6; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #F5F0EB; padding: 30px; text-align: center; }}
+                .content {{ padding: 30px 20px; }}
+                .button {{ 
+                    display: inline-block; 
+                    background-color: #2C2C2C; 
+                    color: white !important; 
+                    padding: 12px 30px; 
+                    text-decoration: none; 
+                    margin: 20px 0;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header"><h1>TAJDO</h1></div>
+                <div class="content">
+                    <p>Hello {user.full_name},</p>
+                    <p>We received a request to reset your password. Click the button below to choose a new one. This link will expire in 1 hour.</p>
+                    <p style="text-align: center;">
+                        <a href="{reset_link}" class="button">Reset Password</a>
+                    </p>
+                    <p>If you didn't request this, you can safely ignore this email.</p>
+                    <p>Best regards,<br>The TAJDO Team</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        return self.send_email(user.email, subject, html_content)
+
+    def send_admin_booking_notification(self, booking, user, service_name):
+        """Notify admin of a new booking request"""
+        subject = f"New Training Request - {user.full_name}"
+        
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: 'Inter', Arial, sans-serif; color: #333; line-height: 1.6; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; }}
+                .header {{ background-color: #2C2C2C; color: white; padding: 20px; text-align: center; }}
+                .section {{ padding: 20px; border-bottom: 1px solid #eee; }}
+                .label {{ font-weight: bold; color: #666; font-size: 12px; text-transform: uppercase; }}
+                .value {{ margin-bottom: 15px; font-size: 16px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>New Training Request</h1>
+                </div>
+                <div class="section">
+                    <p class="label">Customer</p>
+                    <p class="value">{user.full_name}<br/>{user.email}<br/>{user.phone or 'No phone provided'}</p>
+                    
+                    <p class="label">Program</p>
+                    <p class="value">{service_name} (Preferred: {booking.preferred_time})</p>
+                </div>
+                <div class="section">
+                    <p class="label">Dog Details</p>
+                    <p class="value"><strong>{booking.dog_name}</strong> - {booking.dog_breed} ({booking.dog_age})</p>
+                    
+                    <p class="label">Behavioural Issues</p>
+                    <p class="value">{booking.issues or 'No description provided.'}</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        return self.send_email("info@tajdo.ch", subject, html_content)

@@ -985,4 +985,3 @@ async def reset_password(request: schemas.ResetPasswordRequest, db: Session = De
     user.reset_token_expires = None
     db.commit()
     return {"message": "Password has been successfully reset."}
-    asyncio.create_task(start_twint_listener())

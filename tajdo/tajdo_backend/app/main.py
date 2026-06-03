@@ -43,22 +43,21 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # include routers for payment through stripe
 app.include_router(payments.router)
 # Set all CORS enabled origins
-if settings.BACKEND_CORS_ORIGINS:
-    # Create a mutable list from settings and add the live production domains
-    origins = list(settings.BACKEND_CORS_ORIGINS)
-    if "https://www.tajdo.shop" not in origins:
-        origins.append("https://www.tajdo.shop")
-    if "https://tajdo.shop" not in origins:
-        origins.append("https://tajdo.shop")
+# Create a mutable list from settings and always add the live production domains
+origins = list(settings.BACKEND_CORS_ORIGINS) if settings.BACKEND_CORS_ORIGINS else []
+if "https://www.tajdo.shop" not in origins:
+    origins.append("https://www.tajdo.shop")
+if "https://tajdo.shop" not in origins:
+    origins.append("https://tajdo.shop")
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=origins,
-        allow_origin_regex=r"https://ta[dj]o-frontend-draft.*\.vercel\.app",
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_origin_regex=r"https://ta[dj]o-frontend-draft.*\.vercel\.app",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.middleware("http")
 async def debug_request_body(request: Request, call_next):
@@ -535,6 +534,9 @@ def create_order(order: schemas.OrderCreate, db: Session = Depends(get_db), curr
         if not order.payment_intent_id:
             raise HTTPException(status_code=400, detail="Missing payment_intent_id")
         
+        if not settings.STRIPE_SECRET_KEY:
+            raise HTTPException(status_code=500, detail="Stripe configuration missing on server.")
+            
         try:
             stripe.api_key = settings.STRIPE_SECRET_KEY
             intent = stripe.PaymentIntent.retrieve(order.payment_intent_id)

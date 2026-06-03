@@ -284,7 +284,7 @@ def read_page_content(slug: str, lang: str = "en", db: Session = Depends(get_db)
     ).first()
     if db_page is None:
         # Return empty content instead of 404 to handle uninitialized pages gracefully
-        return {"slug": slug, "content": {}}
+        return {"slug": slug, "language": lang, "content": {}}
     return db_page
 
 @app.get("/admin/pages/{slug}/", response_model=schemas.Page)
@@ -299,7 +299,7 @@ def read_page_content_admin(
         models.Page.language == lang
     ).first()
     if db_page is None:
-        return {"slug": slug, "content": {}}
+        return {"slug": slug, "language": lang, "content": {}}
     return db_page
 
 @app.put("/admin/pages/{slug}/", response_model=schemas.Page)

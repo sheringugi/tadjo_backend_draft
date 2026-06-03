@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime
 from decimal import Decimal
@@ -505,3 +505,16 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     email: Optional[str] = None
+
+# Page Content Schemas
+class PageBase(BaseModel):
+    slug: str
+    language: str = "en"
+    content: Dict[str, Any]
+
+class PageUpdate(BaseModel):
+    content: Dict[str, Any]
+
+class Page(PageBase):
+    class Config:
+        from_attributes = True

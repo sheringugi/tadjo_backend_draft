@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, ForeignKey, Integer, Numeric, DateTime, Text, Enum, Table, Index
+from sqlalchemy import Column, String, Boolean, ForeignKey, Integer, Numeric, DateTime, Text, Enum, Table, Index, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -351,3 +351,10 @@ class Booking(Base):
 
     user = relationship("User", back_populates="bookings")
     service = relationship("Service", back_populates="bookings")
+
+class Page(Base):
+    __tablename__ = "pages"
+    
+    slug = Column(String, primary_key=True)
+    language = Column(String, primary_key=True, index=True, default="en")
+    content = Column(JSON, nullable=False, default={})

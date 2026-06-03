@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, Request, File, Uplo
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List, Optional
 from uuid import UUID
 from decimal import Decimal
@@ -10,7 +11,6 @@ import shutil
 import os
 from datetime import datetime, timedelta
 # from .services.payment_service import process_twint_payment, process_card_payment
-from datetime import timedelta
 
 from .db.session import engine, Base, get_db
 from .models import models
@@ -273,6 +273,57 @@ def delete_category(category_id: str, db: Session = Depends(get_db), current_use
     db.delete(db_category)
     db.commit()
     return
+
+# Page Content Endpoints
+@app.get("/pages/{slug}/", response_model=schemas.Page)
+def read_page_content(slug: str, lang: str = "en", db: Session = Depends(get_db)):
+    # Use func.lower to ensure case-insensitive matching
+    db_page = db.query(models.Page).filter(
+        func.lower(models.Page.slug) == slug.lower(),
+        models.Page.language == lang
+    ).first()
+    if db_page is None:
+        # Return empty content instead of 404 to handle uninitialized pages gracefully
+        return {"slug": slug, "content": {}}
+    return db_page
+
+@app.get("/admin/pages/{slug}/", response_model=schemas.Page)
+def read_page_content_admin(
+    slug: str, 
+    lang: str = "en",
+    db: Session = Depends(get_db), 
+    current_user: schemas.User = Depends(get_current_admin)
+):
+    db_page = db.query(models.Page).filter(
+        func.lower(models.Page.slug) == slug.lower(),
+        models.Page.language == lang
+    ).first()
+    if db_page is None:
+        return {"slug": slug, "content": {}}
+    return db_page
+
+@app.put("/admin/pages/{slug}/", response_model=schemas.Page)
+def update_page_content(
+    slug: str, 
+    page_update: schemas.PageUpdate, 
+    lang: str = "en",
+    db: Session = Depends(get_db), 
+    current_user: schemas.User = Depends(get_current_admin)
+):
+    db_page = db.query(models.Page).filter(
+        func.lower(models.Page.slug) == slug.lower(),
+        models.Page.language == lang
+    ).first()
+    
+    if not db_page:
+        db_page = models.Page(slug=slug, language=lang, content=page_update.content)
+        db.add(db_page)
+    else:
+        db_page.content = page_update.content
+    
+    db.commit()
+    db.refresh(db_page)
+    return db_page
 
 # User Endpoints
 @app.post("/users/", response_model=schemas.User)

@@ -14,7 +14,12 @@ SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://tajdo_shop_db_
 if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
     SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    pool_pre_ping=True,  # Tests connections before using them
+    pool_recycle=300,    # Refreshes connections every 5 minutes
+    pool_size=10,        # Increases pool size for more concurrent requests
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()

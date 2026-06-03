@@ -44,9 +44,16 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(payments.router)
 # Set all CORS enabled origins
 if settings.BACKEND_CORS_ORIGINS:
+    # Create a mutable list from settings and add the live production domains
+    origins = list(settings.BACKEND_CORS_ORIGINS)
+    if "https://www.tajdo.shop" not in origins:
+        origins.append("https://www.tajdo.shop")
+    if "https://tajdo.shop" not in origins:
+        origins.append("https://tajdo.shop")
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.BACKEND_CORS_ORIGINS,
+        allow_origins=origins,
         allow_origin_regex=r"https://ta[dj]o-frontend-draft.*\.vercel\.app",
         allow_credentials=True,
         allow_methods=["*"],
@@ -536,7 +543,8 @@ def create_order(order: schemas.OrderCreate, db: Session = Depends(get_db), curr
                 raise HTTPException(status_code=400, detail=f"Payment status is {intent.status}, not succeeded.")
             
             # Amount verification (intent.amount is in cents)
-            if intent.amount != int(total * 100):
+            # Use abs difference check to handle minor rounding variances (1 cent tolerance)
+            if abs(intent.amount - int(round(total * 100))) > 1:
                 raise HTTPException(status_code=400, detail="Payment amount mismatch.")
                 
         except stripe.error.StripeError as e:

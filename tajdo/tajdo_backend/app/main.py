@@ -43,8 +43,13 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # include routers for payment through stripe
 app.include_router(payments.router)
 # Set all CORS enabled origins
-# Create a mutable list from settings and always add the live production domains
-origins = list(settings.BACKEND_CORS_ORIGINS) if settings.BACKEND_CORS_ORIGINS else []
+# Robustly handle CORS origins whether they are a list or a comma-separated string
+if isinstance(settings.BACKEND_CORS_ORIGINS, str):
+    origins = [i.strip() for i in settings.BACKEND_CORS_ORIGINS.split(",")]
+else:
+    origins = list(settings.BACKEND_CORS_ORIGINS) if settings.BACKEND_CORS_ORIGINS else []
+
+# Always ensure production domains are included
 if "https://www.tajdo.shop" not in origins:
     origins.append("https://www.tajdo.shop")
 if "https://tajdo.shop" not in origins:

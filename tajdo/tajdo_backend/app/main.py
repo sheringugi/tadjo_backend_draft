@@ -9,8 +9,9 @@ from decimal import Decimal
 import uuid
 import shutil
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 # from .services.payment_service import process_twint_payment, process_card_payment
+import stripe
 
 from .db.session import engine, Base, get_db
 from .models import models
@@ -79,7 +80,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     print(f"DEBUG: Login attempt. Username: '{form_data.username}'")
     print(f"DEBUG: Login Password length: {len(form_data.password)}")
     
-    user = db.query(models.User).filter(models.User.email == form_data.username).first()
+    user = db.query(models.User).filter(func.lower(models.User.email) == form_data.username.lower()).first()
     
     if not user:
         print(f"DEBUG: Login failed - User '{form_data.username}' NOT FOUND in database.")
@@ -101,7 +102,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 
 @app.post("/auth/admin/login", response_model=schemas.Token)
 async def admin_login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.email == form_data.username).first()
+    user = db.query(models.User).filter(func.lower(models.User.email) == form_data.username.lower()).first()
     if not user or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -331,7 +332,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     try:
         print(f"DEBUG: Received registration request for {user.email}")
         print(f"DEBUG: Password length received: {len(user.password)}")
-        db_user = db.query(models.User).filter(models.User.email == user.email).first()
+        db_user = db.query(models.User).filter(func.lower(models.User.email) == user.email.lower()).first()
         if db_user:
             raise HTTPException(status_code=400, detail="Email already registered")
 
@@ -522,6 +523,24 @@ def create_order(order: schemas.OrderCreate, db: Session = Depends(get_db), curr
     initial_status = "processing"
     if order.payment_method == "twint":
         initial_status = "pending_payment"
+    elif order.payment_method == "card":
+        # Server-side verification for Card Payments
+        if not order.payment_intent_id:
+            raise HTTPException(status_code=400, detail="Missing payment_intent_id")
+        
+        try:
+            stripe.api_key = settings.STRIPE_SECRET_KEY
+            intent = stripe.PaymentIntent.retrieve(order.payment_intent_id)
+            
+            if intent.status != "succeeded":
+                raise HTTPException(status_code=400, detail=f"Payment status is {intent.status}, not succeeded.")
+            
+            # Amount verification (intent.amount is in cents)
+            if intent.amount != int(total * 100):
+                raise HTTPException(status_code=400, detail="Payment amount mismatch.")
+                
+        except stripe.error.StripeError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     db_order = models.Order(
         order_number=f"ORD-{uuid.uuid4().hex[:6].upper()}",
@@ -608,7 +627,7 @@ async def track_order(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     
-    if order.user.email != email:
+    if order.user.email.lower() != email.lower():
         raise HTTPException(status_code=404, detail="Order not found")
     
     return order
@@ -1011,11 +1030,14 @@ def update_booking_status(booking_id: UUID, booking_update: schemas.BookingUpdat
 
 @app.post("/auth/forgot-password")
 async def forgot_password(request: schemas.ForgotPasswordRequest, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.email == request.email).first()
+    # Use lower() to prevent case-sensitivity issues during password reset
+    user = db.query(models.User).filter(
+        func.lower(models.User.email) == request.email.lower().strip()
+    ).first()
     if user:
         token = str(uuid.uuid4())
         user.reset_token = token
-        user.reset_token_expires = datetime.now() + timedelta(hours=1)
+        user.reset_token_expires = datetime.now(timezone.utc) + timedelta(hours=1)
         db.commit()
         email_service.send_password_reset_email(user, token)
     # Always return success to prevent email enumeration

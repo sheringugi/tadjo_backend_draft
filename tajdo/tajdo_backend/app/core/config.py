@@ -9,7 +9,7 @@ class Settings:
     # CORS Origins
     # Load from env or default to localhost
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
-    _ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:8080,http://localhost:5173,http://localhost:3000,https://www.tajdo.shop,https://tadjo-frontend-draft.vercel.app,https://tadjo-frontend-draft-49zx.vercel.app")
+    _ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:8080,http://localhost:5173,http://localhost:3000,https://www.tajdo.shop,https://tadjo-frontend-draft.vercel.app,https://tadjo-frontend-draft-49zx.vercel.app,http://localhost:8080")
     BACKEND_CORS_ORIGINS: List[str] = [origin.strip() for origin in _ALLOWED_ORIGINS.split(",") if origin.strip()]
 
     # TWINT Listener Settings

@@ -18,4 +18,6 @@ class Settings:
     TWINT_EMAIL_USER: str = os.getenv("TWINT_EMAIL_USER", "")
     TWINT_EMAIL_PASSWORD: str = os.getenv("TWINT_EMAIL_PASSWORD", "")
 
+    STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
+    
 settings = Settings()

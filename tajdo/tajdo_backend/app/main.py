@@ -639,15 +639,6 @@ def delete_order(order_id: UUID, db: Session = Depends(get_db), current_user: sc
     db.commit()
     return
 
-@app.get("/orders/{order_id}", response_model=schemas.Order)
-def read_order(order_id: UUID, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
-    db_order = db.query(models.Order).filter(models.Order.id == order_id).first()
-    if db_order is None:
-        raise HTTPException(status_code=404, detail="Order not found")
-    if str(db_order.user_id) != str(current_user.id) and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to view this order")
-    return db_order
-
 @app.get("/orders/track")
 async def track_order(
     order_number: str,
@@ -663,6 +654,16 @@ async def track_order(
         raise HTTPException(status_code=404, detail="Order not found")
     
     return order
+
+@app.get("/orders/{order_id}", response_model=schemas.Order)
+def read_order(order_id: UUID, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
+    db_order = db.query(models.Order).filter(models.Order.id == order_id).first()
+    if db_order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if str(db_order.user_id) != str(current_user.id) and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized to view this order")
+    return db_order
+
 
 @app.get("/users/{user_id}/orders/", response_model=List[schemas.Order])
 def read_user_orders(user_id: UUID, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):

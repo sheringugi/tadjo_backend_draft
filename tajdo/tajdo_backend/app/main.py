@@ -622,6 +622,23 @@ def read_all_orders(skip: int = 0, limit: int = 100, db: Session = Depends(get_d
     orders = db.query(models.Order).offset(skip).limit(limit).all()
     return orders
 
+@app.delete("/admin/orders/{order_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_order(order_id: UUID, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    db_order = db.query(models.Order).filter(models.Order.id == order_id).first()
+    if db_order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    # Safety check: Only allow deleting pending or cancelled orders
+    if db_order.status not in ["pending_payment", "cancelled"]:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Cannot delete order in status '{db_order.status}'. Only pending_payment or cancelled orders can be deleted."
+        )
+    
+    db.delete(db_order)
+    db.commit()
+    return
+
 @app.get("/orders/{order_id}", response_model=schemas.Order)
 def read_order(order_id: UUID, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
     db_order = db.query(models.Order).filter(models.Order.id == order_id).first()

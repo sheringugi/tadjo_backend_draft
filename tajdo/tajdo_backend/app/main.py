@@ -199,6 +199,16 @@ async def get_card_transactions(db: Session = Depends(get_db), current_user: sch
         }) for tx in transactions
     ]
 
+@app.get("/admin/payments/card/balance")
+async def get_card_balance(db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    """Returns the sum of all confirmed Card (Stripe) transactions from the database."""
+    total = db.query(func.sum(models.Order.total)).filter(
+        models.Order.payment_method == "card",
+        models.Order.status != "pending_payment"
+    ).scalar() or 0
+    return {"total_confirmed_card_revenue": float(total)}
+
+
 # Upload Endpoint
 @app.post("/upload/image")
 async def upload_image(request: Request, file: UploadFile = File(...), current_user: schemas.User = Depends(get_current_admin)):

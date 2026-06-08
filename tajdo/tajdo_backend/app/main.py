@@ -16,7 +16,7 @@ import stripe
 from .db.session import engine, Base, get_db
 from .models import models
 from .schemas import schemas
-from .schemas.schemas import TwintTransactionSchema # Import the new schema
+from .schemas.schemas import TwintTransactionSchema, CardTransactionSchema # Import the schemas
 from .core.security import verify_password, get_password_hash, create_access_token, decode_access_token
 from .core.config import settings
 from .dependencies import get_current_user, get_current_admin
@@ -174,6 +174,27 @@ async def get_twint_transactions(db: Session = Depends(get_db), current_user: sc
             "total": float(tx.total),
             "created_at": tx.created_at,
             "payment_intent_id": tx.payment_intent_id,
+            "status": tx.status
+        }) for tx in transactions
+    ]
+
+@app.get("/admin/payments/card/transactions", response_model=List[CardTransactionSchema])
+async def get_card_transactions(db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    """Returns a list of all successful Card (Stripe) transactions."""
+    # Query orders where payment_method is card and they aren't pending
+    transactions = db.query(models.Order).options(joinedload(models.Order.user)).filter(
+        models.Order.payment_method == "card",
+        models.Order.status != "pending_payment"
+    ).order_by(models.Order.created_at.desc()).all()
+    
+    return [
+        CardTransactionSchema.model_validate({
+            "id": str(tx.id),
+            "order_number": tx.order_number,
+            "customer_email": tx.user.email if tx.user else "N/A",
+            "total": float(tx.total),
+            "created_at": tx.created_at,
+            "payment_intent_id": tx.payment_intent_id, # This is the Stripe PI ID
             "status": tx.status
         }) for tx in transactions
     ]

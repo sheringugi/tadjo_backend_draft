@@ -16,6 +16,7 @@ import stripe
 from .db.session import engine, Base, get_db
 from .models import models
 from .schemas import schemas
+from .schemas.schemas import TwintTransactionSchema # Import the new schema
 from .core.security import verify_password, get_password_hash, create_access_token, decode_access_token
 from .core.config import settings
 from .dependencies import get_current_user, get_current_admin
@@ -25,6 +26,7 @@ from .core.twint_listener import start_twint_listener, check_emails
 import asyncio
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
+from sqlalchemy.orm import joinedload # Import joinedload for eager loading
 import io
 
 
@@ -138,6 +140,43 @@ async def manual_twint_check(current_user: schemas.User = Depends(get_current_ad
     print("DEBUG: Manually triggering TWINT check...")
     await asyncio.to_thread(check_emails)
     return {"message": "TWINT check completed. See console logs for details."}
+
+# TWINT Payment Analytics Endpoints
+@app.get("/admin/payments/twint/balance")
+async def get_twint_balance(db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    """Returns the sum of all confirmed TWINT transactions."""
+    total = db.query(func.sum(models.Order.total)).filter(
+        models.Order.payment_method == "twint",
+        models.Order.status != "pending_payment"
+    ).scalar() or 0
+    return {"total_confirmed_twint_revenue": float(total)}
+
+@app.get("/admin/payments/twint/transactions", response_model=List[TwintTransactionSchema])
+async def get_twint_transactions(db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    """Returns a list of all confirmed TWINT transactions for identification."""
+    # We query the Order model directly and filter by confirmed twint payments
+    # Eager load the 'user' relationship to avoid N+1 queries and ensure user data is available
+    transactions = db.query(models.Order).options(joinedload(models.Order.user)).filter(
+        models.Order.payment_method == "twint",
+        models.Order.status != "pending_payment"
+    ).order_by(models.Order.created_at.desc()).all()
+    
+    # Manually map to the TwintTransactionSchema to flatten user email into the transaction object
+    return [
+        TwintTransactionSchema.model_validate({ # Use model_validate for Pydantic v2
+            # Explicitly map fields from the ORM model to the Pydantic schema
+            # Pydantic's from_attributes=True handles most, but 'customer_email' is custom
+            # Ensure 'id' is a string for consistency with frontend interface if it expects string UUID
+            # and 'total' is float.
+            "id": str(tx.id),
+            "order_number": tx.order_number,
+            "customer_email": tx.user.email if tx.user else "N/A",
+            "total": float(tx.total),
+            "created_at": tx.created_at,
+            "payment_intent_id": tx.payment_intent_id,
+            "status": tx.status
+        }) for tx in transactions
+    ]
 
 # Upload Endpoint
 @app.post("/upload/image")

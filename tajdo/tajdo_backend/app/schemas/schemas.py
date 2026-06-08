@@ -159,6 +159,18 @@ class Address(AddressBase):
     class Config:
         from_attributes = True
 
+class TwintTransactionSchema(BaseModel):
+    id: UUID
+    order_number: str
+    customer_email: str
+    total: float
+    created_at: datetime
+    payment_intent_id: Optional[str] = None
+    status: str
+
+    class Config:
+        from_attributes = True
+
 # Wishlist Schemas
 class WishlistBase(BaseModel):
     product_id: UUID

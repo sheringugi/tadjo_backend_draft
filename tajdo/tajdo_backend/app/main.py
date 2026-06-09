@@ -1065,7 +1065,15 @@ def read_rescue_contribution(order_id: UUID, db: Session = Depends(get_db), curr
 
 @app.get("/admin/rescue-contributions/", response_model=List[schemas.RescueContribution])
 def read_all_rescue_contributions(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
-    contributions = db.query(models.RescueContribution).offset(skip).limit(limit).all()
+    # Eager load the 'order' relationship to access order_number
+    contributions = db.query(models.RescueContribution).options(
+        joinedload(models.RescueContribution.order)
+    ).offset(skip).limit(limit).all()
+    
+    # Map the order_number from the relationship to the schema field
+    for c in contributions:
+        c.order_number = c.order.order_number if c.order else "N/A"
+        
     return contributions
 
 @app.on_event("startup")

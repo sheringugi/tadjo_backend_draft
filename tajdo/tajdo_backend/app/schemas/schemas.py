@@ -460,6 +460,7 @@ class RescueContributionCreate(RescueContributionBase):
 class RescueContribution(RescueContributionBase):
     id: UUID
     created_at: datetime
+    order_number: Optional[str] = None
 
     class Config:
         from_attributes = True

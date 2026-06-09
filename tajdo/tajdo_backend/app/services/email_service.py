@@ -80,7 +80,7 @@ class EmailService:
                     
                     <p>If you have any questions, please don't hesitate to contact us.</p>
                     
-                    <p>With every purchase, 30% goes to TAJDO Rescue to help dogs in need.</p>
+                    <p>With every purchase, 10% goes to TAJDO Rescue to help dogs in need.</p>
                     
                     <p style="margin-top: 30px;">Best regards,<br>The TAJDO Team</p>
                 </div>
@@ -179,7 +179,7 @@ class EmailService:
                     
                     <p>Your TAJDO order ({order.order_number}) has been successfully delivered!</p>
                     
-                    <p>We hope you and your furry friend love your new products. Remember, 30% of your purchase supports TAJDO Rescue.</p>
+                    <p>We hope you and your furry friend love your new products. Remember, 10% of your purchase supports TAJDO Rescue.</p>
                     
                     <p>If you have any questions or concerns about your order, please don't hesitate to contact us.</p>
                     

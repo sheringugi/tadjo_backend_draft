@@ -899,6 +899,36 @@ def promote_user_to_admin(request: schemas.UserPromoteRequest, db: Session = Dep
     db.refresh(db_user)
     return db_user
 
+@app.post("/admin/users/demote", response_model=schemas.User)
+def demote_admin(request: schemas.UserPromoteRequest, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    """
+    Allows an admin to demote another admin to 'customer' role using their email address.
+    """
+    db_user = db.query(models.User).filter(
+        func.lower(models.User.email) == request.email.lower().strip()
+    ).first()
+    
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User with this email not found")
+    if db_user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot demote yourself")
+    
+    db_user.role = "customer"
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+@app.delete("/admin/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(user_id: UUID, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot delete yourself")
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    db.delete(db_user)
+    db.commit()
+    return
+
 
 @app.put("/notifications/{notification_id}/read", response_model=schemas.Notification)
 def mark_notification_as_read(notification_id: UUID, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):

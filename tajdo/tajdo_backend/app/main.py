@@ -654,8 +654,8 @@ def create_order(order: schemas.OrderCreate, db: Session = Depends(get_db), curr
             models.CartItem.product_id == item.product_id
         ).delete()
 
-    # Create Rescue Contribution (30% of total)
-    rescue_amount = (total * Decimal("0.30")).quantize(Decimal("0.01"))
+    # Create Rescue Contribution (10% of total)
+    rescue_amount = (total * Decimal("0.10")).quantize(Decimal("0.01"))
     db_rescue = models.RescueContribution(
         order_id=db_order.id,
         amount=rescue_amount,

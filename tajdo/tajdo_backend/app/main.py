@@ -866,6 +866,40 @@ def read_user_notifications(user_id: UUID, db: Session = Depends(get_db), curren
     notifications = db.query(models.Notification).filter(models.Notification.user_id == user_id).all()
     return notifications
 
+@app.get("/admin/users/", response_model=List[schemas.User])
+def read_all_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    """
+    Allows an admin to retrieve a list of all users.
+    """
+    users = db.query(models.User).offset(skip).limit(limit).all()
+    return users
+
+@app.get("/admin/users/admins", response_model=List[schemas.User])
+def read_admin_users(db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    """
+    Allows an admin to retrieve a list of all users with the 'admin' role.
+    """
+    admin_users = db.query(models.User).filter(models.User.role == "admin").all()
+    return admin_users
+
+@app.post("/admin/users/promote", response_model=schemas.User)
+def promote_user_to_admin(request: schemas.UserPromoteRequest, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_admin)):
+    """
+    Allows an admin to promote a user to 'admin' role using their email address.
+    """
+    db_user = db.query(models.User).filter(
+        func.lower(models.User.email) == request.email.lower().strip()
+    ).first()
+    
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User with this email not found")
+    
+    db_user.role = "admin"
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+
 @app.put("/notifications/{notification_id}/read", response_model=schemas.Notification)
 def mark_notification_as_read(notification_id: UUID, db: Session = Depends(get_db), current_user: schemas.User = Depends(get_current_user)):
     db_notification = db.query(models.Notification).filter(models.Notification.id == notification_id).first()

@@ -37,6 +37,9 @@ class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
 
+class UserPromoteRequest(BaseModel):
+    email: EmailStr
+
 # ProductSpecification Schemas (Moved up for nested creation)
 class ProductSpecificationBase(BaseModel):
     product_id: Optional[UUID] = None
